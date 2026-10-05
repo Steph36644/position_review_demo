@@ -51,7 +51,7 @@ check('19 dates', report.dateCount === 19);
 check('range starts 2026-09-01', report.start === '2026-09-01');
 check('range ends 2026-09-28', report.end === '2026-09-28');
 check('four fictional symbols', report.symbols.join(',') === ['红利ETF', '恒生科技', '港股通创新药', '科创50'].sort().join(','));
-check('seed header is demo', seedText.indexOf('自动生成：v0.0 Demo 内置种子数据') === 0);
+check('seed header is demo', seedText.indexOf('/* 自动生成：v0.0 Demo 内置种子数据') === 0);
 var blocked = ['真实', '持仓'].join('');
 var blockedSnapshot = ['券商', '账户快照'].join('');
 check('seed has no forbidden phrase', seedText.indexOf(blocked) === -1 && seedText.indexOf(blockedSnapshot) === -1);
