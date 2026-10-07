@@ -1,9 +1,0 @@
-{
-  "name": "postion-review-demo",
-  "private": true,
-  "version": "1.3.0",
-  "description": "Public demo edition of a position-review SPA. Fictional trial data only.",
-  "scripts": {
-    "test": "node test/logic_test.js"
-  }
-}
