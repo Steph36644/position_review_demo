@@ -1,0 +1,164 @@
+/* ===== 基础（v1.2.2 深色主题：页面底 #0e1118 / 面板 #1b2130 / 次级底 #151a24） ===== */
+:root { color-scheme: dark; }
+* { font-family: 'Inter', 'Noto Sans SC', system-ui, -apple-system, sans-serif; }
+body { font-feature-settings: "tnum"; }
+
+.glass { background: rgba(14,17,24,0.82); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.06); }
+.card-shadow { box-shadow: 0 1px 2px rgba(0,0,0,0.45), 0 6px 18px rgba(0,0,0,0.35); }
+.card-hover { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.card-hover:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 10px 24px rgba(0,0,0,0.45); }
+
+.rise-text { color: #e07a6f; }
+.fall-text { color: #6fb587; }
+.number { font-variant-numeric: tabular-nums; }
+
+.fade-in { animation: fadeIn 0.4s ease both; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ===== Tab ===== */
+.tab-btn { color: #7f889b; transition: all 0.15s ease; }
+.tab-btn:hover { color: #e8ebf2; }
+.tab-btn.active { background: #e8ebf2; color: #151a24; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+
+/* ===== 表单 ===== */
+.form-input {
+  width: 100%;
+  background: #151a24;
+  border: 1px solid #262e3f;
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: #d6dbe7;
+  transition: all 0.15s ease;
+}
+.form-input::placeholder { color: #4a5266; }
+.form-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(127,136,155,0.35); border-color: #384254; background: #1b2130; }
+.form-input.invalid { border-color: #b9575a; background: #2a1a1c; }
+textarea.form-input { font-family: inherit; resize: vertical; }
+
+.field-error { font-size: 11px; color: #e88f86; margin-top: 3px; }
+.field-warn { font-size: 11px; color: #d9b476; margin-top: 3px; }
+
+/* ===== 弹窗 ===== */
+.modal-mask { background: rgba(5,8,14,0.62); backdrop-filter: blur(4px); }
+
+/* ===== 标签 tag ===== */
+.tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 6px; font-weight: 600; white-space: nowrap; }
+.tag-reason { background: #262e3f; color: #99a1b4; }
+.tag-兑现 { background: #1c2f26; color: #8cc7a1; }
+.tag-证伪 { background: #3a2124; color: #ec9489; }
+.tag-失效 { background: #262e3f; color: #7f889b; }
+.tag-违规 { background: #4a2020; color: #f3b3aa; }
+.tag-buy { background: #3a2124; color: #ec9489; }
+.tag-add { background: #4a282b; color: #f3b3aa; }
+.tag-sell, .tag-reduce, .tag-clear { background: #1c2f26; color: #8cc7a1; }
+
+/* 卖出分类选择按钮 */
+.selltype-pick.st-兑现 { background: #1c2f26; border-color: #4f8a68; color: #8cc7a1; }
+.selltype-pick.st-证伪 { background: #3a2124; border-color: #c9605c; color: #ec9489; }
+.selltype-pick.st-失效 { background: #262e3f; border-color: #4a5266; color: #99a1b4; }
+.selltype-pick.st-违规 { background: #4a2020; border-color: #6b3a3f; color: #f3b3aa; }
+
+/* ===== 截图上传 ===== */
+.drop-zone { border: 2px dashed #384254; transition: border-color 0.15s ease, background 0.15s ease; }
+.drop-zone:hover, .drop-zone.dragover { border-color: #7f889b; background: #151a24; }
+
+.upload-progress-track { height: 6px; background: #262e3f; border-radius: 3px; overflow: hidden; }
+.upload-progress-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #4a5266, #99a1b4); width: 0%; transition: width 0.2s ease; }
+
+.upload-status-dot { width: 8px; height: 8px; border-radius: 9999px; display: inline-block; }
+.upload-status-dot.bg-blue-500 { animation: pulse-dot 1s ease-in-out infinite; }
+@keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.cell-pending { background: #3a3320 !important; }
+.cell-lowconf { background: #3a2124 !important; }
+.cell-anomaly { box-shadow: inset 0 0 0 1.5px #e07a6f; }
+
+.prefill-input {
+  width: 100%; background: transparent; border: 1px solid transparent;
+  border-radius: 6px; padding: 4px 6px; font-size: 12px; text-align: right;
+  color: #d6dbe7;
+}
+.prefill-input:focus { outline: none; border-color: #4a5266; background: #1b2130; }
+.prefill-input.pf-name { text-align: left; }
+
+/* ===== 持仓卡片 ===== */
+.holding-card .reason-block { background: #151a24; border-radius: 0.625rem; padding: 0.625rem 0.75rem; }
+.closure-dot { width: 10px; height: 10px; border-radius: 9999px; display: inline-block; flex-shrink: 0; }
+.c-OPEN { background: #4a5266; }
+.c-PARTIAL { background: #c9a15f; }
+.c-CLOSED { background: #5fa377; }
+.c-VIOLATION { background: #b9575a; }
+
+/* ===== 危险操作二次确认按钮 ===== */
+.btn-danger-armed { animation: armedBlink 0.8s ease-in-out infinite; }
+@keyframes armedBlink { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+/* ===== Toast ===== */
+.toast-item {
+  background: #1b2130; color: #d6dbe7; border-radius: 0.75rem; padding: 0.75rem 1rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5); font-size: 12px;
+  display: flex; align-items: flex-start; gap: 0.5rem;
+  animation: toastIn 0.25s ease both;
+  border-left: 3px solid #4a5266;
+}
+.toast-item.toast-success { border-left-color: #5fa377; }
+.toast-item.toast-error { border-left-color: #e07a6f; }
+.toast-item.toast-warn { border-left-color: #c9a15f; }
+@keyframes toastIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
+
+/* ===== 复盘面板 ===== */
+.rv-toggle .rv-arrow { transform: rotate(-90deg); }
+.rv-body { display: none; }
+.rv-panel-open .rv-body { display: block; }
+.rv-panel-open .rv-arrow { transform: rotate(0deg); }
+
+.rv-op-item {
+  display: flex; align-items: center; gap: 0.5rem; font-size: 12px; color: #99a1b4;
+  background: #151a24; border-radius: 0.5rem; padding: 0.5rem 0.75rem;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #384254; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ===== v1.2.1：盈亏归因下拉（v1.2.2 深色化） ===== */
+.attr-select {
+  font-size: 11px; padding: 0.25rem 1.25rem 0.25rem 0.5rem;
+  border-radius: 0.5rem; border: 1px solid #384254; background: #151a24;
+  color: #99a1b4; max-width: 160px; cursor: pointer; outline: none;
+}
+.attr-select:focus { border-color: #7f889b; }
+.attr-default { border-style: dashed; border-color: #4a5266; color: #7f889b; }
+.attr-override { border-color: #5578ad; background: #1d2940; color: #a9c0e0; }
+.attr-conflict { border-color: #b9575a; background: #2a1a1c; color: #ec9489; }
+
+/* ===== v1.2.1：告警跳转高亮（终态改为深色面板，避免闪白） ===== */
+.flash-highlight { animation: flashHl 1.6s ease; }
+@keyframes flashHl {
+  0%, 60% { background: #3a2124; box-shadow: 0 0 0 2px rgba(224,122,111,0.4); }
+  100% { background: #1b2130; box-shadow: 0 1px 2px rgba(0,0,0,0.45), 0 6px 18px rgba(0,0,0,0.35); }
+}
+
+/* ===== v1.2.1：告警横幅 ===== */
+#alertBanner { animation: bannerIn 0.3s ease both; }
+@keyframes bannerIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.ab-item { font-size: 12px; color: #f3b3aa; background: #221619; border: 1px solid #6b3a3f; border-radius: 0.5rem; padding: 0.4rem 0.6rem; display: flex; align-items: center; gap: 0.5rem; }
+.ab-goto { color: #8aa8d4; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+.ab-ignore { color: #7f889b; cursor: pointer; white-space: nowrap; }
+.ab-ignore:hover { color: #99a1b4; }
+
+/* ===== v1.3.1：切片维度 Tab ===== */
+.slice-tab { color: #7f889b; transition: all 0.15s ease; }
+.slice-tab:hover { color: #e8ebf2; }
+.slice-tab-active { background: #e8ebf2; color: #151a24; }
+
+/* ===== v1.3.1：ETF 重叠检测 ===== */
+#etfOverlapBody tr:hover { background: rgba(255,255,255,0.03); }
+
+/* ===== v1.3.1：What-If 抽屉动画 ===== */
+#whatIfDrawer > div:last-child { animation: drawerIn 0.25s ease both; }
+@keyframes drawerIn { from { transform: translateX(100%); } to { transform: translateX(0); } }

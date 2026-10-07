@@ -1,0 +1,176 @@
+// ============================================================
+// v1.1.1 → v1.1.2 数据迁移脚本
+// 使用方法：
+// 1. 在文件资源管理器双击打开 v1.1.1\index.html（file:/// 协议）
+// 2. 按 F12 打开开发者工具，切换到「控制台(Console)」
+// 3. 全选复制下方全部代码，粘贴到控制台，按回车执行
+// 4. 等待输出「迁移完成」后，关闭浏览器
+// 5. 双击打开 v1.1.2\index.html，数据即可正常访问
+// ============================================================
+(async function migrate() {
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('v1.1.1 → v1.1.2 数据迁移开始');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  // ===== 1. 数据探测与备份 =====
+  const oldKeys = Object.keys(localStorage).filter(k => k.startsWith('pr_'));
+  console.log('探测到 v1.1.1 数据键：', oldKeys);
+
+  if (oldKeys.length === 0) {
+    console.warn('未探测到任何 pr_* 数据（可能是首次打开，无数据可迁移）');
+    return;
+  }
+
+  // 生成备份对象
+  const backup = {};
+  oldKeys.forEach(k => backup[k] = localStorage.getItem(k));
+  backup._timestamp = new Date().toISOString();
+  backup._origin = location.origin;
+  localStorage.setItem('pr2_migration_backup_v1', JSON.stringify(backup));
+  console.log('✓ 数据已备份至 pr2_migration_backup_v1');
+
+  // ===== 2. 复制 localStorage 数据 =====
+  const map = {
+    'pr_overview': 'pr2_overview',
+    'pr_holdings': 'pr2_holdings',
+    'pr_trades':   'pr2_trades',
+    'pr_reviews':  'pr2_reviews',
+    'pr_snapshots':'pr2_snapshots',
+    'pr_version':  'pr2_version',
+    'pr_mock_version': 'pr2_mock_version',
+    'pr_backup_v0':'pr2_backup_v0'
+  };
+
+  let copied = 0, skipped = 0;
+  for (const [oldK, newK] of Object.entries(map)) {
+    const v = localStorage.getItem(oldK);
+    if (v === null) { skipped++; continue; }
+    localStorage.setItem(newK, v);
+    copied++;
+    let count = v.length;
+    try { const j = JSON.parse(v); if (j && typeof j === 'object') count = Array.isArray(j) ? j.length : Object.keys(j).length; } catch(e){}
+    console.log(`  ✓ ${oldK} → ${newK}（${count} 项，${v.length} 字节）`);
+  }
+  console.log(`localStorage 复制完成：${copied} 个键已复制，${skipped} 个键无数据`);
+
+  // ===== 3. 迁移 IndexedDB 截图 =====
+  let idbResult;
+  try {
+    idbResult = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('pr_indexeddb', 1);
+      req.onsuccess = () => {
+        const srcDb = req.result;
+        const delReq = indexedDB.deleteDatabase('pr2_indexeddb');
+        delReq.onsuccess = delReq.onerror = () => {
+          const openReq = indexedDB.open('pr2_indexeddb', 1);
+          openReq.onupgradeneeded = (e) => {
+            const dstDb = e.target.result;
+            if (!dstDb.objectStoreNames.contains('images')) {
+              dstDb.createObjectStore('images');
+            }
+          };
+          openReq.onsuccess = () => {
+            const dstDb = openReq.result;
+            try {
+              const srcTx = srcDb.transaction('images', 'readonly');
+              const srcStore = srcTx.objectStore('images');
+              const countReq = srcStore.count();
+              countReq.onsuccess = () => {
+                const total = countReq.result;
+                if (total === 0) {
+                  srcDb.close(); dstDb.close();
+                  resolve({ copied: 0, total: 0, msg: '源 IndexedDB 无截图' });
+                  return;
+                }
+                const getAllReq = srcStore.getAll();
+                getAllReq.onsuccess = () => {
+                  const items = getAllReq.result;
+                  const keysReq = srcStore.getAllKeys();
+                  keysReq.onsuccess = () => {
+                    const keys = keysReq.result;
+                    const dstTx = dstDb.transaction('images', 'readwrite');
+                    const dstStore = dstTx.objectStore('images');
+                    let done = 0;
+                    items.forEach((item, i) => {
+                      dstStore.put(item, keys[i]);
+                      done++;
+                    });
+                    dstTx.oncomplete = () => {
+                      srcDb.close(); dstDb.close();
+                      resolve({ copied: done, total: total });
+                    };
+                    dstTx.onerror = () => {
+                      srcDb.close(); dstDb.close();
+                      reject(new Error('dstTx error: ' + dstTx.error));
+                    };
+                  };
+                  keysReq.onerror = () => reject(new Error('keysReq error'));
+                };
+                getAllReq.onerror = () => reject(new Error('getAllReq error'));
+              };
+              countReq.onerror = () => reject(new Error('countReq error'));
+            } catch (e) {
+              srcDb.close(); dstDb.close();
+              reject(e);
+            }
+          };
+          openReq.onerror = () => reject(new Error('open pr2_indexeddb failed'));
+        };
+      };
+      req.onerror = () => reject(new Error('open pr_indexeddb failed'));
+    });
+    console.log(`✓ IndexedDB 截图迁移：${idbResult.copied}/${idbResult.total} 张`);
+  } catch (e) {
+    console.warn('✗ IndexedDB 截图迁移失败（不影响持仓数据）：', e.message);
+    idbResult = { copied: 0, total: 0, error: e.message };
+  }
+
+  // ===== 4. 数据校验 =====
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('数据校验报告：');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  const newKeys = Object.keys(localStorage).filter(k => k.startsWith('pr2_'));
+  const diff = [];
+  for (const [oldK, newK] of Object.entries(map)) {
+    const oldV = localStorage.getItem(oldK);
+    const newV = localStorage.getItem(newK);
+    if (oldV === null && newV === null) continue;
+    if (oldV !== newV) {
+      diff.push(`${oldK} → ${newK}：内容不一致（old=${oldV?oldV.length:0} bytes / new=${newV?newV.length:0} bytes）`);
+    }
+  }
+
+  if (diff.length === 0) {
+    console.log('✓ localStorage 数据一致性校验通过，全部一致');
+  } else {
+    console.warn('✗ 数据一致性异常（不应出现）：');
+    diff.forEach(d => console.warn('  ' + d));
+  }
+
+  console.log(`✓ v1.1.1 数据键：${oldKeys.length} 个`);
+  console.log(`✓ v1.1.2 数据键：${newKeys.length} 个`);
+  console.log(`✓ 备份文件：pr2_migration_backup_v1（${JSON.stringify(backup).length} 字节）`);
+  console.log(`✓ IndexedDB：${idbResult.copied} 张截图`);
+
+  // 快速展示持仓日期数
+  try {
+    const h = JSON.parse(localStorage.getItem('pr_holdings') || '{}');
+    const o = JSON.parse(localStorage.getItem('pr_overview') || '{}');
+    console.log(`✓ 持仓日期数：${Object.keys(h).length} 天`);
+    console.log(`✓ 总览日期数：${Object.keys(o).length} 天`);
+  } catch(e){}
+
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('迁移完成！现在可以关闭浏览器，然后打开 v1.1.2/index.html');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  // 返回一个简洁的迁移报告对象（方便用户复制保存）
+  return {
+    timestamp: backup._timestamp,
+    lsKeysCopied: copied,
+    lsKeysSkipped: skipped,
+    idbScreenshots: idbResult.copied,
+    consistencyOK: diff.length === 0
+  };
+})();

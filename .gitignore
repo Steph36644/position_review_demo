@@ -1,0 +1,16 @@
+# 编辑器/IDE 本地元数据
+.trae/
+.vscode/
+.idea/
+
+# 操作系统垃圾文件
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# 临时/备份/日志文件
+*.tmp
+*.bak
+*.log
+*~

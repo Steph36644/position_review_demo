@@ -1,0 +1,15 @@
+# 统一换行符处理
+* text=auto eol=lf
+
+# Windows 批处理文件保持 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
