@@ -48,6 +48,10 @@ load('../js/services/instrumentService.js');
 load('../js/services/portfolioSliceService.js');
 load('../js/services/etfOverlapService.js');
 load('../js/services/whatIfService.js');
+load('../js/services/ocrByokService.js');
+load('../js/services/dayChainService.js');
+load('../js/services/backupService.js');
+load('../js/repositories/indexedDBRepo.js');
 
 const A = sandbox.window.App;
 A.LocalStorageRepo.init(null);
@@ -638,7 +642,145 @@ const vSell = A.WhatIfService.validateTrade('2026-10-04', { name: 'A', action: '
 // validateTrade 从 DB 取持仓，DB 中无 A → 报错持仓不存在
 assert(!vSell.valid, '卖出不在 DB 持仓中的标的 → 校验失败');
 
-console.log('\n==================================');
-console.log('通过 ' + passed + ' / 失败 ' + failed);
-console.log('==================================');
-process.exit(failed ? 1 : 0);
+/* ===== v1.3.4：每日持仓链 / 备份 / 云端 OCR BYOK ===== */
+console.log('\n--- v1.3.4 每日持仓链 ---');
+const chainDate = '2026-11-02';
+const prevDate = '2026-11-01';
+A.HoldingsService.saveSnapshot(prevDate, [
+  { date: prevDate, name: '链测甲', position: 1000, available: 1000, cost: 10, current_price: 12, market_value: 12000, cleared: 0 },
+  { date: prevDate, name: '链测乙', position: 500, available: 500, cost: 8, current_price: 8, market_value: 4000, cleared: 0 }
+], { date: prevDate, total_assets: 20000, market_value: 16000 });
+const pre = A.DayChain.prefill(chainDate);
+assert(pre.mode === 'prefill' && pre.prevDate === prevDate, '空白新日走预填');
+const rowJia = pre.rows.find(r => r.name === '链测甲');
+assert(rowJia && rowJia.position === 1000 && rowJia.cost === 10 && rowJia.current_price === null,
+  '预填复制昨日成本与数量，收盘价留空');
+assert(!pre.rows.some(r => r.current_price), '预填行都没有收盘价');
+
+const same = A.DayChain.prepare(chainDate, pre.rows, []);
+assert(same.valid && same.drafts.length === 0, '数量未变时不要求草稿');
+
+const changed = pre.rows.map(r => Object.assign({}, r));
+changed.find(r => r.name === '链测甲').position = 1500;
+changed.find(r => r.name === '链测乙').position = 200;
+const need = A.DayChain.prepare(chainDate, changed, []);
+assert(!need.valid, '数量变化且理由为空 → 不能保存');
+assert(need.drafts.find(d => d.name === '链测甲').action === 'add', '加量默认是加仓');
+assert(need.drafts.find(d => d.name === '链测乙').action === 'reduce', '减量但未清完默认是减仓');
+assert(A.DayChain.allowedActions(500, 200).indexOf('sell') >= 0, '部分减量允许改成卖出');
+assert(A.DayChain.allowedActions(500, 0).indexOf('clear') >= 0 && A.DayChain.allowedActions(500, 0).indexOf('sell') >= 0,
+  '减到 0 允许清仓或卖出');
+
+const tradesBefore = A.LocalStorageRepo.getDB().trades.length;
+const filled = need.drafts.map(d => Object.assign({}, d, { reason: d.name + ' 虚构理由' }));
+const committed = A.DayChain.commit(chainDate, changed, { date: chainDate, total_assets: 20000 }, filled);
+assert(committed.valid, '理由写上之后可以保存');
+assert(A.LocalStorageRepo.getDB().trades.length === tradesBefore, '草稿不写入交易流水');
+const storedDrafts = A.LocalStorageRepo.getDB().snapshots[chainDate].position_drafts;
+assert(storedDrafts && storedDrafts.length === 2 && storedDrafts.every(d => d.reason),
+  '草稿落在快照 position_drafts');
+assert(!A.LocalStorageRepo.getDB().trades.some(t => t.name === '链测甲'), '流水里没有链测标的');
+
+const dropped = changed.filter(r => r.name !== '链测乙');
+const gone = A.DayChain.prepare('2026-11-03', dropped.map(r => Object.assign({}, r, { date: '2026-11-03' })), []);
+// 11-03 的上一日是 11-02，乙已从 500 变成 200 并保存
+assert(gone.drafts.some(d => d.name === '链测乙' && d.action === 'clear'), '从持仓中消失视为清仓草稿');
+
+console.log('\n--- v1.3.4 备份含截图且不含密钥 ---');
+A.OcrByok.saveSettings({ provider: 'qwen', apiKey: 'sk-demo-local-only' });
+const payload = A.BackupService.buildPayload({
+  holdings: { '2026-11-01': [] },
+  trades: [],
+  apiKey: 'sk-should-not-export',
+  ocr_byok: { apiKey: 'sk-should-not-export' },
+  overview: {}
+}, { 'snap_2026-11-01': 'data:image/png;base64,AAAA' });
+const payloadText = JSON.stringify(payload);
+assert(payload.screenshots['snap_2026-11-01'].indexOf('base64,AAAA') >= 0, '备份包含截图本体');
+assert(payloadText.indexOf('sk-should-not-export') < 0, '备份 JSON 不包含 API Key');
+assert(payloadText.indexOf('sk-demo-local-only') < 0, '本机 BYOK 密钥不进备份');
+assert(payload.version === 'v1.3.4', '备份带上应用版本');
+
+console.log('\n--- v1.3.4 云端 OCR BYOK ---');
+const providers = A.Constants.OCR_PROVIDER_ORDER;
+assert(providers.join(',') === 'deepseek,kimi,qwen,glm', '可选服务商为 DeepSeek / Kimi / Qwen / GLM');
+providers.forEach(function (id) {
+  const p = A.Constants.OCR_PROVIDERS[id];
+  assert(p && p.endpoint && p.model && p.label, id + ' 有端点与模型');
+});
+throws(function () { A.OcrByok.buildRequest('abc', { provider: 'kimi', apiKey: '' }); }, 'OcrFailedException', '没有密钥时拒绝云端 OCR');
+const req = A.OcrByok.buildRequest('abc', { provider: 'glm', apiKey: 'sk-test-glm' });
+assert(req.endpoint.indexOf('bigmodel.cn') >= 0 && req.body.model === 'glm-4.5v', 'GLM 走官方视觉接口');
+assert(JSON.stringify(req.body).indexOf('sk-test-glm') < 0, '密钥不出现在请求体');
+assert(req.headers.Authorization === 'Bearer sk-test-glm', '密钥只放在 Authorization 头');
+A.OcrByok.clearSettings();
+throws(function () { A.OcrByok.buildRequest('abc'); }, 'OcrFailedException', '清空设置后回退为未配置');
+
+/* 虚构种子：行业主数据齐全，科创50 卖出能对上买入 */
+console.log('\n--- v1.3.4 虚构种子 ---');
+const seedSrc = fs.readFileSync(path.resolve(__dirname, '../js/data/seed.js'), 'utf8');
+assert(seedSrc.indexOf('虚构演示数据') >= 0, '种子文件仍标明虚构');
+assert(!/sk-[A-Za-z0-9]{8,}/.test(seedSrc), '种子里没有 API Key 样式字符串');
+const seedBox = { window: {} };
+seedBox.window = seedBox;
+vm.createContext(seedBox);
+vm.runInContext(seedSrc, seedBox);
+const seed = seedBox.App.Seed;
+['恒生科技', '红利ETF', '科创50', '港股通创新药'].forEach(function (name) {
+  const inst = seed.instruments && seed.instruments[name];
+  assert(inst && inst.industry && inst.industry !== '未分类', name + ' 有行业主数据');
+});
+const starBuys = {};
+(seed.trades || []).filter(t => t.name === '科创50' && ['buy', 'add'].indexOf(t.action) >= 0 && ['filled', 'partial'].indexOf(t.status) >= 0)
+  .forEach(t => { starBuys[t.id] = t.amount; });
+(seed.trades || []).filter(t => t.name === '科创50' && ['sell', 'reduce', 'clear'].indexOf(t.action) >= 0 && t.sell_type !== '违规' && ['filled', 'partial'].indexOf(t.status) >= 0)
+  .forEach(t => {
+    const linked = Object.keys(t.linked_qty_map || {}).reduce((s, id) => s + Number(t.linked_qty_map[id] || 0), 0);
+    assert(t.linked_buy_ids && t.linked_buy_ids.length > 0 && linked === t.amount, '科创50 卖出 ' + t.id + ' 数量与关联买入一致');
+    t.linked_buy_ids.forEach(id => { starBuys[id] = (starBuys[id] || 0) - (t.linked_qty_map[id] || 0); });
+  });
+Object.keys(starBuys).forEach(id => {
+  assert(starBuys[id] >= 0, '科创50 买入 ' + id + ' 没有被超额消耗');
+});
+const lastStar = (seed.holdings['2026-09-28'] || []).find(h => h.name === '科创50');
+const openStar = Object.keys(starBuys).reduce((s, id) => s + Math.max(0, starBuys[id]), 0);
+assert(lastStar && lastStar.position === openStar, '科创50 期末持仓 ' + (lastStar && lastStar.position) + ' 等于未平仓买入 ' + openStar);
+
+A.OcrByok.saveSettings({ provider: 'qwen', apiKey: 'sk-demo-local-only' });
+const keyBeforeImport = A.OcrByok.getSettings().apiKey;
+let importedShots = {};
+const realIdb = A.IndexedDBRepo;
+A.IndexedDBRepo = {
+  isAvailable: () => Promise.resolve(true),
+  putImage: (k, v) => { importedShots[k] = v; return Promise.resolve(); },
+  getImage: (k) => Promise.resolve(importedShots[k]),
+  allKeys: () => Promise.resolve(Object.keys(importedShots)),
+  deleteImage: () => Promise.resolve(),
+  clearAll: () => Promise.resolve()
+};
+A.BackupService.importPayload({
+  holdings: { '2026-01-01': [{ name: '导入测', position: 1 }] },
+  trades: [],
+  overview: {},
+  apiKey: 'sk-from-backup',
+  ocr_byok: { apiKey: 'sk-from-backup' },
+  screenshots: { snap_import: 'data:image/png;base64,BBBB' }
+}).then(function (result) {
+  assert(result.screenshotCount === 1 && importedShots.snap_import.indexOf('BBBB') >= 0, '导入把截图写回 IndexedDB');
+  assert(A.OcrByok.getSettings().apiKey === keyBeforeImport, '导入不覆盖本机 API Key');
+  assert(JSON.stringify(A.LocalStorageRepo.getDB()).indexOf('sk-from-backup') < 0, '导入后的库里没有备份夹带的密钥');
+  A.IndexedDBRepo = realIdb;
+  finish();
+}).catch(function (e) {
+  failed++;
+  console.error('  ✗ FAIL: 导入备份抛错 ' + e.message);
+  A.IndexedDBRepo = realIdb;
+  finish();
+});
+
+function finish() {
+  console.log('\n==================================');
+  console.log('通过 ' + passed + ' / 失败 ' + failed);
+  console.log('==================================');
+  process.exit(failed ? 1 : 0);
+}

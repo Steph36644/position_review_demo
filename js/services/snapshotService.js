@@ -258,12 +258,25 @@ App.SnapshotService = (function () {
   }
 
   /**
-   * 云端 OCR 入口（v1.1.1 未配置具体服务商 endpoint / key）
-   * 启用时自动回退本地 OCR，由 controller 给出提示。
-   * v1.2 如需接入，在此实现 fetch 调用即可，接口契约不变。
+   * 云端 OCR（v1.3.3 BYOK）。未配置密钥时拒绝，由 uploadSnapshot 回退本地 Tesseract。
+   * 返回值与 runTesseract 对齐：{ text, confidence, lines }。
    */
-  function runCloudOcr(/* base64, onProgress */) {
-    return Promise.reject(new OcrFailedException('CLOUD_OCR_NOT_CONFIGURED'));
+  async function runCloudOcr(base64, onProgress) {
+    if (!App.OcrByok) throw new OcrFailedException('CLOUD_OCR_NOT_CONFIGURED');
+    const settings = App.OcrByok.getSettings();
+    if (!settings.apiKey) throw new OcrFailedException('CLOUD_OCR_NOT_CONFIGURED');
+    if (onProgress) onProgress(0.15);
+    const text = await App.OcrByok.recognize(base64, settings);
+    if (onProgress) onProgress(0.3);
+    const lines = String(text).split(/\r?\n/).map(function (line) {
+      return { text: line, confidence: 0.95 };
+    });
+    return {
+      text: String(text),
+      confidence: 0.95,
+      lines: lines,
+      provider: settings.provider
+    };
   }
 
   /* ---------- 异常变动检测（对比上次快照） ---------- */

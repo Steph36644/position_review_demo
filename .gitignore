@@ -14,3 +14,8 @@ Desktop.ini
 *.bak
 *.log
 *~
+
+# 密钥与本地备份（公开仓库不收录）
+.env
+.env.*
+*.local.json

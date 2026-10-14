@@ -41,6 +41,7 @@ App.Constants = {
     plan: 'pr2_plan',
     market_data: 'pr2_market_data',   // v1.2.3：大盘行情 + 温度
     instruments: 'pr2_instruments',   // v1.3.1：标的主数据
+    ocrByok: 'pr2_ocr_byok',          // v1.3.3：云端 OCR 密钥，只留在本机，不进备份/种子
     version: 'pr2_version',
     mockVersion: 'pr2_mock_version',
     backup: 'pr2_backup_v0'
@@ -145,6 +146,37 @@ App.Constants = {
   DB_VERSION: 1,
   IMAGE_STORE: 'images',
 
-  APP_VERSION: 'v1.3.1',
-  SCHEMA_VERSION: 'v1.3'
+  APP_VERSION: 'v1.3.4',
+  SCHEMA_VERSION: 'v1.3',
+
+  // ===== v1.3.3 云端 OCR（BYOK，OpenAI 兼容视觉接口）=====
+  // 密钥只存在 localStorage，公开/多用户部署必须改到服务端。
+  OCR_PROVIDERS: {
+    deepseek: {
+      id: 'deepseek',
+      label: 'DeepSeek',
+      endpoint: 'https://api.deepseek.com/v1/chat/completions',
+      model: 'deepseek-v4-flash-vision-exp'
+    },
+    kimi: {
+      id: 'kimi',
+      label: 'Kimi',
+      endpoint: 'https://api.moonshot.ai/v1/chat/completions',
+      model: 'kimi-k3'
+    },
+    qwen: {
+      id: 'qwen',
+      label: 'Qwen',
+      endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+      model: 'qwen3-vl-plus'
+    },
+    glm: {
+      id: 'glm',
+      label: 'GLM',
+      endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+      model: 'glm-4.5v'
+    }
+  },
+  OCR_PROVIDER_ORDER: ['deepseek', 'kimi', 'qwen', 'glm'],
+  CLOUD_OCR_TIMEOUT_MS: 45000
 };

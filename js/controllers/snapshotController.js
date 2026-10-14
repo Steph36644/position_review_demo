@@ -284,6 +284,7 @@ App.SnapshotController = (function () {
       setStatus(true, result.ocrStatus === 'success' ? '识别完成' : '识别部分完成，请修正标红字段', 1);
       renderPrefill(result.prefill);
       renderOverview(result.overview);
+      syncUploadDrafts();
       if (!result.imageStored) {
         U().toast('IndexedDB 不可用，截图本体未留存，不影响数据落库', 'warn');
       }
@@ -301,14 +302,65 @@ App.SnapshotController = (function () {
     }
   }
 
+  function syncUploadDrafts() {
+    const box = document.getElementById('up-drafts');
+    if (!box || !App.DayChain) return;
+    const date = document.getElementById('up-date').value;
+    const holdings = collectHoldings();
+    const user = App.ManualEntry.readDraftInputs('up-draftList');
+    const plan = App.DayChain.prepare(date, holdings, user);
+    if (!plan.drafts.length) {
+      box.classList.add('hidden');
+      document.getElementById('up-draftList').innerHTML = '';
+      return;
+    }
+    box.classList.remove('hidden');
+    App.ManualEntry.renderDraftList('up-draftList', plan.drafts);
+  }
+
+  function syncCloudBox() {
+    const on = document.getElementById('up-useCloud').checked;
+    const box = document.getElementById('up-cloudBox');
+    if (box) box.classList.toggle('hidden', !on);
+    if (!on || !App.OcrByok) return;
+    const settings = App.OcrByok.getSettings();
+    const sel = document.getElementById('up-ocrProvider');
+    const key = document.getElementById('up-ocrKey');
+    if (sel && !sel.value) sel.value = settings.provider;
+    if (key && document.activeElement !== key && !key.value) key.value = settings.apiKey;
+  }
+
+  function persistCloudSettings() {
+    if (!App.OcrByok) return;
+    const sel = document.getElementById('up-ocrProvider');
+    const key = document.getElementById('up-ocrKey');
+    App.OcrByok.saveSettings({
+      provider: sel ? sel.value : undefined,
+      apiKey: key ? key.value : undefined
+    });
+  }
+
   /* ---------- 确认落库 ---------- */
   function onConfirm() {
     const holdings = collectHoldings();
     const err = validateForConfirm(holdings);
     if (err) { U().toast(err, 'error'); return; }
+    const date = document.getElementById('up-date').value;
     const overview = collectOverview(holdings);
+    const plan = App.DayChain.prepare(date, holdings, App.ManualEntry.readDraftInputs('up-draftList'));
+    if (!plan.valid) {
+      syncUploadDrafts();
+      U().toast(plan.errors[0], 'error');
+      return;
+    }
     try {
-      App.SnapshotService.confirmSnapshot(document.getElementById('up-date').value, holdings, overview);
+      const beforeTrades = App.LocalStorageRepo.getDB().trades.length;
+      App.SnapshotService.confirmSnapshot(date, holdings, overview);
+      App.DayChain.attach(date, plan.drafts);
+      if (App.LocalStorageRepo.getDB().trades.length !== beforeTrades) {
+        U().toast('内部错误：持仓草稿不应写入交易流水', 'error');
+        return;
+      }
       document.getElementById('uploadModal').classList.add('hidden');
       document.getElementById('uploadModal').classList.remove('flex');
       App.DashboardController.rebuildDateSelect();
@@ -329,6 +381,20 @@ App.SnapshotController = (function () {
     document.getElementById('up-confirm').disabled = true;
     document.getElementById('up-useCloud').checked = false;
     document.getElementById('fileInput').value = '';
+    const drafts = document.getElementById('up-drafts');
+    if (drafts) {
+      drafts.classList.add('hidden');
+      document.getElementById('up-draftList').innerHTML = '';
+    }
+    const cloud = document.getElementById('up-cloudBox');
+    if (cloud) cloud.classList.add('hidden');
+    if (App.OcrByok) {
+      const settings = App.OcrByok.getSettings();
+      const sel = document.getElementById('up-ocrProvider');
+      const key = document.getElementById('up-ocrKey');
+      if (sel) sel.value = settings.provider;
+      if (key) key.value = settings.apiKey;
+    }
   }
 
   function openModal() {
@@ -374,9 +440,12 @@ App.SnapshotController = (function () {
     document.getElementById('up-addRow').addEventListener('click', addRow);
     document.getElementById('up-prefillTbody').addEventListener('click', e => {
       const btn = e.target.closest('[data-row-del]');
-      if (btn) { btn.closest('tr').remove(); recalcSnapshot(); }
+      if (btn) { btn.closest('tr').remove(); recalcSnapshot(); syncUploadDrafts(); }
     });
-    document.getElementById('up-prefillTbody').addEventListener('input', () => recalcSnapshot());
+    document.getElementById('up-prefillTbody').addEventListener('input', () => {
+      recalcSnapshot();
+      syncUploadDrafts();
+    });
     document.getElementById('up-overviewGrid').addEventListener('input', () => recalcSnapshot());
     document.getElementById('up-confirm').addEventListener('click', onConfirm);
 
@@ -389,11 +458,14 @@ App.SnapshotController = (function () {
     // 云端开关：勾选时二次告知
     document.getElementById('up-useCloud').addEventListener('change', e => {
       if (e.target.checked) {
-        if (!confirm('启用云端 OCR 后，截图将上传至第三方 OCR 服务。\n（v1.1.1 尚未配置云端服务商，开启后仍会自动回退本地 OCR）\n\n是否确认开启？')) {
+        if (!confirm('启用云端 OCR 后，截图会连同你本机保存的 API Key 发到所选服务商。\n密钥只存在这台浏览器里，不会写入种子或备份。\n公开演示或多用户使用时，必须把密钥放到服务端，不能共用浏览器里的 Key。\n\n识别失败会自动改回本地 Tesseract。是否确认开启？')) {
           e.target.checked = false;
         }
       }
+      syncCloudBox();
     });
+    document.getElementById('up-ocrProvider').addEventListener('change', persistCloudSettings);
+    document.getElementById('up-ocrKey').addEventListener('change', persistCloudSettings);
   }
 
   return { init, openModal };

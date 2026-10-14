@@ -41,7 +41,7 @@ App.LocalStorageRepo = (function () {
     DB.snapshots = read(KEYS().snapshots, {});
     DB.plan = read(KEYS().plan, null);   // v1.2：缺失时由 PlanService.initDefault() 兜底
     DB.market_data = read(KEYS().market_data, {});   // v1.2.3：大盘行情 + 温度
-    DB.instruments = read(KEYS().instruments, {});   // v1.3.1：标的主数据
+    DB.instruments = read(KEYS().instruments, (seed && seed.instruments) || {});   // v1.3.1：标的主数据；缺省用虚构种子
     initialized = true;
     return DB;
   }

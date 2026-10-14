@@ -51,6 +51,11 @@ App.App = (function () {
       App.LocalStorageRepo.saveTrades();
       console.info('种子交易数据已播种：', App.LocalStorageRepo.getDB().trades.length, '条');
     }
+    // 虚构标的主数据：没有本地记录时写入种子，避免行业切片全部落入「未分类」
+    if (!localStorage.getItem(C().LS_KEYS.instruments)) {
+      const inst = App.LocalStorageRepo.getDB().instruments;
+      if (inst && Object.keys(inst).length) App.LocalStorageRepo.saveInstruments();
+    }
 
     // 2. v0.0 → v1.1 数据迁移（只执行一次）
     try {
