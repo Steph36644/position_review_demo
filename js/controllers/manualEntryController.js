@@ -112,6 +112,7 @@ App.ManualEntry = (function () {
       fpEl.className = 'number';
       pctEl.textContent = '—';
     }
+    if (document.getElementById('mn-drafts')) refreshDrafts();
   }
 
   /* ---------- 收集落库（自动补全计算字段） ---------- */
@@ -173,24 +174,105 @@ App.ManualEntry = (function () {
     return overview;
   }
 
+  function readDraftInputs(listId) {
+    const rows = [];
+    document.querySelectorAll('#' + listId + ' [data-draft]').forEach(function (el) {
+      const actionEl = el.querySelector('[data-draft-action]');
+      const reasonEl = el.querySelector('[data-draft-reason]');
+      rows.push({
+        name: el.getAttribute('data-draft'),
+        action: actionEl ? actionEl.value : '',
+        reason: reasonEl ? reasonEl.value : ''
+      });
+    });
+    return rows;
+  }
+
+  function renderDraftList(listId, drafts) {
+    const box = document.getElementById(listId);
+    if (!box) return;
+    box.innerHTML = (drafts || []).map(function (d) {
+      const allowed = App.DayChain.allowedActions(d.prev_qty, d.qty);
+      const options = allowed.map(function (action) {
+        const label = App.Constants.ACTION_LABELS[action] || action;
+        const selected = action === d.action ? ' selected' : '';
+        return '<option value="' + U().escapeHtml(action) + '"' + selected + '>' + U().escapeHtml(label) + '</option>';
+      }).join('');
+      const deltaText = (d.qty > d.prev_qty ? '+' : '−') + Math.abs(d.delta);
+      return '<div data-draft="' + U().escapeHtml(d.name) + '" class="rounded-lg bg-white border border-amber-100 p-2 space-y-1">' +
+        '<div class="flex items-center justify-between gap-2">' +
+        '<span class="text-xs font-medium text-slate-700">' + U().escapeHtml(d.name) + '</span>' +
+        '<span class="text-[10px] text-slate-400 number">' + d.prev_qty + ' → ' + d.qty + '（' + deltaText + '）</span>' +
+        '</div>' +
+        '<div class="flex flex-wrap items-center gap-2">' +
+        '<select data-draft-action class="form-input !py-1 !text-xs w-28">' + options + '</select>' +
+        '<input data-draft-reason class="form-input !py-1 !text-xs flex-1 min-w-[12rem]" placeholder="理由（必填，不写入交易流水）" value="' +
+        U().escapeHtml(d.reason || '') + '" />' +
+        '</div></div>';
+    }).join('');
+  }
+
+  function refreshDrafts() {
+    const date = document.getElementById('mn-date').value;
+    const holdings = collectHoldings();
+    const user = readDraftInputs('mn-draftList');
+    const plan = App.DayChain.prepare(date, holdings, user);
+    const box = document.getElementById('mn-drafts');
+    if (!plan.drafts.length) {
+      box.classList.add('hidden');
+      document.getElementById('mn-draftList').innerHTML = '';
+      return;
+    }
+    box.classList.remove('hidden');
+    renderDraftList('mn-draftList', plan.drafts);
+  }
+
+  function setChainHint(prefill) {
+    const el = document.getElementById('mn-chainHint');
+    if (!el) return;
+    if (prefill.mode === 'prefill' && prefill.prevDate) {
+      el.textContent = '新的一天：已带入 ' + prefill.prevDate + ' 的成本与持仓量，收盘价留空。数量若相对上一日有变化，保存前必须填写草稿理由。草稿只进入当日快照，不写入交易流水。';
+    } else if (prefill.mode === 'existing') {
+      el.textContent = '正在编辑该日已保存的持仓。数量相对上一交易日有变化时，仍须填写草稿理由后才能保存。';
+    } else {
+      el.textContent = '该日之前没有持仓。填写后直接保存；若之后的日期改了数量，会要求补草稿理由。';
+    }
+  }
+
+  function loadDate(date) {
+    const prefill = App.DayChain.prefill(date);
+    renderRows(prefill.rows);
+    renderOverview(prefill.mode === 'existing' ? App.HoldingsService.getOverview(date) : App.HoldingsService.getOverview(date));
+    setChainHint(prefill);
+    recalc();
+    refreshDrafts();
+  }
+
   function onSave() {
     const date = document.getElementById('mn-date').value;
     const holdings = collectHoldings();
     for (const h of holdings) {
       if (!h.name) { U().toast('存在未填写标的名称的行', 'error'); return; }
-      if (h.position !== null && !U().isPosInt(h.position)) {
-        U().toast('「' + h.name + '」持仓量必须为正整数', 'error'); return;
+      if (h.position !== null && !U().isPosInt(h.position) && Number(h.position) !== 0) {
+        U().toast('「' + h.name + '」持仓量必须为非负整数', 'error'); return;
       }
       if (h.current_price !== null && !U().isPosNum(h.current_price)) {
         U().toast('「' + h.name + '」现价必须为正数', 'error'); return;
       }
     }
+    const beforeTrades = App.LocalStorageRepo.getDB().trades.length;
     const overview = collectOverview(holdings);
-    App.HoldingsService.saveSnapshot(date, holdings, overview);
-
-    // 当日截图状态：纯手动录入标记 skipped（仅当无快照记录时）
-    const db = App.LocalStorageRepo.getDB();
-    if (!db.snapshots[date]) App.SnapshotService.markSkipped(date);
+    try {
+      App.DayChain.commit(date, holdings, overview, readDraftInputs('mn-draftList'));
+    } catch (e) {
+      refreshDrafts();
+      U().toast(e.message || '请先补全数量变动的理由', 'error');
+      return;
+    }
+    if (App.LocalStorageRepo.getDB().trades.length !== beforeTrades) {
+      U().toast('内部错误：持仓草稿不应写入交易流水', 'error');
+      return;
+    }
 
     document.getElementById('manualModal').classList.add('hidden');
     document.getElementById('manualModal').classList.remove('flex');
@@ -202,9 +284,7 @@ App.ManualEntry = (function () {
   function openModal(presetDate) {
     const date = presetDate || App.DashboardController.getDate() || U().today();
     document.getElementById('mn-date').value = date;
-    renderRows(App.HoldingsService.getHoldings(date));
-    renderOverview(App.HoldingsService.getOverview(date));
-    recalc();
+    loadDate(date);
 
     // 名称补全
     let list = document.getElementById('mnNameList');
@@ -240,12 +320,9 @@ App.ManualEntry = (function () {
     document.getElementById('mn-overviewGrid').addEventListener('input', debouncedRecalc);
     document.getElementById('mn-save').addEventListener('click', onSave);
     document.getElementById('mn-date').addEventListener('change', e => {
-      const d = e.target.value;
-      renderRows(App.HoldingsService.getHoldings(d));
-      renderOverview(App.HoldingsService.getOverview(d));
-      recalc();
+      loadDate(e.target.value);
     });
   }
 
-  return { init, openModal };
+  return { init, openModal, readDraftInputs, renderDraftList };
 })();

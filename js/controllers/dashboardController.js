@@ -485,16 +485,38 @@ App.DashboardController = (function () {
     }
   }
 
-  /* ---------- 导出备份 ---------- */
-  function exportBackup() {
-    const data = App.LocalStorageRepo.getDB();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  /* ---------- 导出 / 导入备份（v1.3.2：含截图，不含 API Key） ---------- */
+  async function exportBackup() {
+    const screenshots = await App.BackupService.collectScreenshots();
+    const payload = App.BackupService.buildPayload(App.LocalStorageRepo.getDB(), screenshots);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = '持仓复盘备份_' + U().today() + '.json';
     a.click();
     URL.revokeObjectURL(a.href);
-    U().toast('备份已导出（截图本体存于 IndexedDB，不在备份内）', 'success');
+    const n = Object.keys(screenshots).length;
+    U().toast(n ? ('备份已导出，含 ' + n + ' 张截图') : '备份已导出（当前没有截图）', 'success');
+  }
+
+  async function importBackupFile(file) {
+    if (!file) return;
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+    } catch (e) {
+      U().toast('备份文件不是有效的 JSON', 'error');
+      return;
+    }
+    if (!confirm('导入会替换当前浏览器里的持仓、流水和截图。API Key 不会从备份中恢复。是否继续？')) return;
+    try {
+      const result = await App.BackupService.importPayload(data);
+      const extra = result.screenshotCount ? ('，已恢复 ' + result.screenshotCount + ' 张截图') : '';
+      U().toast('备份已导入' + extra, 'success');
+      location.reload();
+    } catch (e) {
+      U().toast(e.message || '导入失败', 'error');
+    }
   }
 
   /* ---------- 初始化 ---------- */
@@ -516,7 +538,16 @@ App.DashboardController = (function () {
       }
     });
     document.getElementById('btnToggleCleared').addEventListener('click', toggleShowCleared);
-    document.getElementById('btnExport').addEventListener('click', exportBackup);
+    document.getElementById('btnExport').addEventListener('click', function () {
+      exportBackup().catch(function (e) { U().toast(e.message || '导出失败', 'error'); });
+    });
+    const backupFile = document.getElementById('backupFile');
+    document.getElementById('btnImport').addEventListener('click', function () { backupFile.click(); });
+    backupFile.addEventListener('change', function (e) {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      importBackupFile(file);
+    });
 
     // v1.3.1：切片维度 Tab 切换
     document.querySelectorAll('[data-slice-dim]').forEach(b => {
